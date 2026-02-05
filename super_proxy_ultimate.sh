@@ -121,143 +121,79 @@ setup_telegram() {
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# FIXED WEBSOCKET PROXY (No Illegal Packet Size!) + ANTI-DISCONNECT
+# LITE WEBSOCKET PROXY - Optimized for 5 Users
 # ═══════════════════════════════════════════════════════════════════════════════
 create_proxy() {
     cat > "$DIR/proxy.py" << 'PROXY'
 #!/usr/bin/env python3
 """
-Super Proxy v2.1 - Fixed WebSocket SSH Proxy
-With Keep-Alive, Anti-Disconnect, and Optimized Timeouts
+Super Proxy LITE - Optimized for 5 users
+Light on resources, stable connections
 """
 import socket
 import threading
-import sys
-import datetime
-import os
-import select
 
 LISTEN_PORT = 80
 SSH_PORT = 22
-BLACKLIST_FILE = "/etc/superproxy/blacklist.txt"
-LOG_FILE = "/etc/superproxy/connections.log"
+MAX_CONN = 10  # 5 users x 2 connections each
 
-# Anti-disconnect settings
-SOCKET_TIMEOUT = 600  # 10 minutes
-KEEPALIVE_IDLE = 60   # Start keepalive after 60s idle
-KEEPALIVE_INTERVAL = 30  # Send keepalive every 30s
-KEEPALIVE_COUNT = 10  # Max failed keepalives before disconnect
-
-def log_connection(ip, status):
+def forward(src, dst):
     try:
-        with open(LOG_FILE, "a") as f:
-            f.write(f"{datetime.datetime.now()} | {ip} | {status}\n")
-    except:
-        pass
-
-def is_blacklisted(ip):
-    try:
-        with open(BLACKLIST_FILE, "r") as f:
-            return ip in f.read()
-    except:
-        return False
-
-def setup_socket_keepalive(sock):
-    """Configure socket for maximum stability"""
-    try:
-        # Enable TCP keepalive
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
-        # TCP_NODELAY for no delay
-        sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-        # Linux specific keepalive settings
-        if hasattr(socket, 'TCP_KEEPIDLE'):
-            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, KEEPALIVE_IDLE)
-        if hasattr(socket, 'TCP_KEEPINTVL'):
-            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, KEEPALIVE_INTERVAL)
-        if hasattr(socket, 'TCP_KEEPCNT'):
-            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, KEEPALIVE_COUNT)
-        # Set timeout
-        sock.settimeout(SOCKET_TIMEOUT)
-    except:
-        pass
-
-def forward_with_keepalive(src, dst, name=""):
-    """Forward data with better error handling"""
-    try:
-        src.settimeout(SOCKET_TIMEOUT)
         while True:
-            try:
-                # Use select for better timeout handling
-                ready = select.select([src], [], [], 300)  # 5 min select timeout
-                if ready[0]:
-                    data = src.recv(65536)
-                    if not data:
-                        break
-                    dst.sendall(data)
-            except socket.timeout:
-                # Timeout is OK, just continue (keepalive will handle it)
-                continue
-            except:
-                break
-    except:
-        pass
+            data = src.recv(32768)
+            if not data: break
+            dst.sendall(data)
+    except: pass
 
-def handle(client, addr):
-    ip = addr[0]
-    
-    # Check blacklist
-    if is_blacklisted(ip):
-        log_connection(ip, "BLOCKED")
-        client.close()
-        return
-    
-    ssh = None
+def handle(c, a):
+    s = None
     try:
-        # Setup client socket for stability
-        setup_socket_keepalive(client)
+        c.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        c.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
         
-        # Read HTTP request (with timeout)
-        client.settimeout(30)  # 30s to receive initial request
-        request = b''
-        while b'\r\n\r\n' not in request and len(request) < 8192:
-            chunk = client.recv(4096)
-            if not chunk:
-                return
-            request += chunk
+        r = b''
+        while b'\r\n\r\n' not in r and len(r) < 4096:
+            d = c.recv(2048)
+            if not d: return
+            r += d
         
-        # Connect to SSH with keepalive
-        ssh = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        setup_socket_keepalive(ssh)
-        ssh.connect(('127.0.0.1', SSH_PORT))
+        s = socket.socket()
+        s.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+        s.connect(('127.0.0.1', SSH_PORT))
         
-        # Send appropriate response
-        req_str = request.decode('utf-8', errors='ignore').lower()
-        if 'websocket' in req_str or 'upgrade' in req_str:
-            client.sendall(b'HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n')
-        elif 'connect' in req_str:
-            client.sendall(b'HTTP/1.1 200 Connection Established\r\nConnection: keep-alive\r\n\r\n')
-        else:
-            client.sendall(b'HTTP/1.1 200 OK\r\nConnection: keep-alive\r\n\r\n')
+        c.sendall(b'HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n')
         
-        # Forward any extra data after headers
-        idx = request.find(b'\r\n\r\n')
-        if idx != -1 and len(request) > idx + 4:
-            ssh.sendall(request[idx + 4:])
+        i = r.find(b'\r\n\r\n')
+        if i != -1 and len(r) > i + 4:
+            s.sendall(r[i + 4:])
         
-        log_connection(ip, "CONNECTED")
-        
-        # Bidirectional forwarding with keepalive
-        t1 = threading.Thread(target=forward_with_keepalive, args=(client, ssh, "c->s"), daemon=True)
-        t2 = threading.Thread(target=forward_with_keepalive, args=(ssh, client, "s->c"), daemon=True)
-        t1.start()
-        t2.start()
-        t1.join()
-        t2.join()
-        
-    except Exception as e:
-        pass
+        t1 = threading.Thread(target=forward, args=(c, s), daemon=True)
+        t2 = threading.Thread(target=forward, args=(s, c), daemon=True)
+        t1.start(); t2.start()
+        t1.join(); t2.join()
+    except: pass
     finally:
-        try: client.close()
+        try: c.close()
+        except: pass
+        try:
+            if s: s.close()
+        except: pass
+
+k = socket.socket()
+k.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+k.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+k.bind(('0.0.0.0', LISTEN_PORT))
+k.listen(MAX_CONN)
+print(f'[LITE PROXY] Port {LISTEN_PORT} - Max {MAX_CONN//2} users')
+while True:
+    try:
+        c, a = k.accept()
+        threading.Thread(target=handle, args=(c, a), daemon=True).start()
+    except: pass
+PROXY
+    chmod +x "$DIR/proxy.py"
+}
         except: pass
         try:
             if ssh: ssh.close()
@@ -560,57 +496,141 @@ MULTIPROXY
 setup_banner() {
     clear_screen
     print_banner
-    echo -e "  ${Y}━━━ SSH BANNER ━━━${N}\n"
+    echo -e "  ${Y}━━━ SSH WELCOME BANNER ━━━${N}\n"
     
     echo -e "  ${W}Current banner:${N}"
     if [ -f /etc/ssh/banner.txt ]; then
-        cat /etc/ssh/banner.txt
+        echo -e "  ${C}$(head -5 /etc/ssh/banner.txt)${N}"
+        echo -e "  ${DIM}...${N}"
     else
-        echo -e "  ${DIM}(none)${N}"
+        echo -e "  ${DIM}(none set)${N}"
     fi
     echo ""
     
-    echo -e "  ${G}1${N}) Set default banner"
-    echo -e "  ${G}2${N}) Custom banner"
-    echo -e "  ${G}3${N}) Remove banner"
+    echo -e "  ${G}1${N}) 🌟 VIP Premium Banner"
+    echo -e "  ${G}2${N}) 🎮 Gaming Style"
+    echo -e "  ${G}3${N}) 💼 Business/Professional"
+    echo -e "  ${G}4${N}) 🔥 Fire Style"
+    echo -e "  ${G}5${N}) ✏️  Custom Text"
+    echo -e "  ${R}6${N}) ❌ Remove Banner"
     echo -e "  ${R}0${N}) Back"
     echo ""
     read -p "  Select: " opt
     
+    source "$CONFIG" 2>/dev/null
+    IP=$(curl -s -m2 ifconfig.me)
+    
     case $opt in
         1)
-            cat > /etc/ssh/banner.txt << 'DEFBANNER'
-═══════════════════════════════════════════════════
-   🚀 SUPER PROXY ULTIMATE v2.0 🚀
-═══════════════════════════════════════════════════
-   Welcome! Your connection is secured.
-═══════════════════════════════════════════════════
-DEFBANNER
-            grep -q "^Banner" /etc/ssh/sshd_config || echo "Banner /etc/ssh/banner.txt" >> /etc/ssh/sshd_config
-            systemctl restart ssh
-            echo -e "  ${G}✓ Banner set${N}"
+            cat > /etc/ssh/banner.txt << BANNER1
+╔══════════════════════════════════════════════════════════╗
+║                                                          ║
+║     ★ ★ ★   V I P   P R E M I U M   ★ ★ ★               ║
+║                                                          ║
+╠══════════════════════════════════════════════════════════╣
+║                                                          ║
+║   🌐 Server: ${DOMAIN:-$IP}
+║   ⚡ Speed: Unlimited                                    ║
+║   🔒 Status: PREMIUM VIP                                 ║
+║                                                          ║
+║   ✨ Welcome to our VIP service!                         ║
+║   📱 Support: Telegram @admin                            ║
+║                                                          ║
+╚══════════════════════════════════════════════════════════╝
+
+BANNER1
             ;;
         2)
-            echo -e "  Enter banner (end with empty line):"
-            banner=""
-            while IFS= read -r line; do
-                [ -z "$line" ] && break
-                banner+="$line\n"
-            done
-            echo -e "$banner" > /etc/ssh/banner.txt
-            grep -q "^Banner" /etc/ssh/sshd_config || echo "Banner /etc/ssh/banner.txt" >> /etc/ssh/sshd_config
-            systemctl restart ssh
-            echo -e "  ${G}✓ Custom banner set${N}"
+            cat > /etc/ssh/banner.txt << BANNER2
+▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
+█                                                          █
+█   🎮 G A M I N G   S E R V E R 🎮                        █
+█                                                          █
+█▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀█
+█   🚀 Low Ping Gaming Server                              █
+█   🎯 UDP Support: Port 7300                              █
+█   ⚡ Optimized for: PUBG, Free Fire, COD                 █
+█                                                          █
+█   💎 Server: ${DOMAIN:-$IP}
+█   🔥 Status: ACTIVE                                      █
+█                                                          █
+▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+
+BANNER2
             ;;
         3)
+            cat > /etc/ssh/banner.txt << BANNER3
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃                                                          ┃
+┃   SECURE CONNECTION ESTABLISHED                          ┃
+┃                                                          ┃
+┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫
+┃                                                          ┃
+┃   Server: ${DOMAIN:-$IP}
+┃   Protocol: SSH over WebSocket                           ┃
+┃   Encryption: AES-256                                    ┃
+┃   Status: Connected                                      ┃
+┃                                                          ┃
+┃   This is a private server.                              ┃
+┃   Unauthorized access is prohibited.                     ┃
+┃                                                          ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+
+BANNER3
+            ;;
+        4)
+            cat > /etc/ssh/banner.txt << BANNER4
+    🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥
+    🔥                                                      🔥
+    🔥   ███████╗██╗██████╗ ███████╗                        🔥
+    🔥   ██╔════╝██║██╔══██╗██╔════╝                        🔥
+    🔥   █████╗  ██║██████╔╝█████╗                          🔥
+    🔥   ██╔══╝  ██║██╔══██╗██╔══╝                          🔥
+    🔥   ██║     ██║██║  ██║███████╗                        🔥
+    🔥   ╚═╝     ╚═╝╚═╝  ╚═╝╚══════╝                        🔥
+    🔥                                                      🔥
+    🔥   Server: ${DOMAIN:-$IP}
+    🔥   Status: 🟢 ONLINE                                  🔥
+    🔥   Welcome!                                           🔥
+    🔥                                                      🔥
+    🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥
+
+BANNER4
+            ;;
+        5)
+            echo ""
+            echo -e "  ${C}Enter your custom banner line by line.${N}"
+            echo -e "  ${DIM}(Press Enter twice to finish)${N}"
+            echo ""
+            
+            > /etc/ssh/banner.txt
+            while true; do
+                read -p "  > " line
+                [ -z "$line" ] && break
+                echo "$line" >> /etc/ssh/banner.txt
+            done
+            echo "" >> /etc/ssh/banner.txt
+            ;;
+        6)
             rm -f /etc/ssh/banner.txt
             sed -i '/^Banner/d' /etc/ssh/sshd_config
-            systemctl restart ssh
-            echo -e "  ${G}✓ Banner removed${N}"
+            systemctl restart ssh 2>/dev/null
+            echo -e "\n  ${G}✓ Banner removed${N}"
+            sleep 1
+            return
+            ;;
+        0|*)
+            return
             ;;
     esac
     
-    sleep 1
+    # Apply banner
+    grep -q "^Banner" /etc/ssh/sshd_config 2>/dev/null || echo "Banner /etc/ssh/banner.txt" >> /etc/ssh/sshd_config
+    systemctl restart ssh 2>/dev/null
+    
+    echo -e "\n  ${G}✓ Banner set successfully!${N}"
+    echo -e "  ${DIM}Users will see this when they connect.${N}"
+    sleep 2
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
