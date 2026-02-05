@@ -43,8 +43,7 @@ BLACKLIST="$DIR/blacklist.txt"
 LOG_FILE="$DIR/connections.log"
 BACKUP_DIR="/root/superproxy-backups"
 MAX_USERS=5
-SCRIPT_URL="https://raw.githubusercontent.com/user/super-proxy/main/super_proxy.sh"
-
+SCRIPT_URL="https://raw.githubusercontent.com/zomiiixachraf-hub/super-proxy/refs/heads/main/super_proxy_ultimate.sh"
 # ═══════════════════════════════════════════════════════════════════════════════
 # COLORS
 # ═══════════════════════════════════════════════════════════════════════════════
