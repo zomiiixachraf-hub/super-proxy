@@ -43,7 +43,8 @@ BLACKLIST="$DIR/blacklist.txt"
 LOG_FILE="$DIR/connections.log"
 BACKUP_DIR="/root/superproxy-backups"
 MAX_USERS=5
-SCRIPT_URL="https://raw.githubusercontent.com/zomiiixachraf-hub/super-proxy/refs/heads/main/super_proxy_ultimate.sh"
+SCRIPT_URL="https://raw.githubusercontent.com/user/super-proxy/main/super_proxy.sh"
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # COLORS
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -190,35 +191,6 @@ while True:
         c, a = k.accept()
         threading.Thread(target=handle, args=(c, a), daemon=True).start()
     except: pass
-PROXY
-    chmod +x "$DIR/proxy.py"
-}
-        except: pass
-        try:
-            if ssh: ssh.close()
-        except: pass
-
-def main():
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    try:
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
-    except:
-        pass
-    # Enable keepalive on server socket too
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
-    sock.bind(('0.0.0.0', LISTEN_PORT))
-    sock.listen(200)  # Increased backlog
-    print(f'[SUPER PROXY v2.1] Port {LISTEN_PORT} Ready - Anti-Disconnect ON', flush=True)
-    while True:
-        try:
-            c, a = sock.accept()
-            threading.Thread(target=handle, args=(c, a), daemon=True).start()
-        except:
-            pass
-
-if __name__ == '__main__':
-    main()
 PROXY
     chmod +x "$DIR/proxy.py"
 }
