@@ -20,17 +20,17 @@ MAX_USERS=5
 # ═══════════════════════════════════════════════════════════════════════════════
 # 🎨 COLOR PALETTE (LUXURY THEME)
 # ═══════════════════════════════════════════════════════════════════════════════
-R='\033[1;31m'    # Red (Error/Critical)
-G='\033[1;32m'    # Green (Success)
-Y='\033[1;33m'    # Yellow (Warning/Gold)
-B='\033[1;34m'    # Blue (Info)
-M='\033[1;35m'    # Magenta (Accents)
-C='\033[1;36m'    # Cyan (Values/IP)
-W='\033[1;37m'    # White (Text)
-N='\033[0m'       # Reset
-BG_B='\033[44m'   # Blue Background
-BG_R='\033[41m'   # Red Background
-BG_G='\033[42m'   # Green Background
+R='\033[1;31m'
+G='\033[1;32m'
+Y='\033[1;33m'
+B='\033[1;34m'
+M='\033[1;35m'
+C='\033[1;36m'
+W='\033[1;37m'
+N='\033[0m'
+BG_B='\033[44m'
+BG_R='\033[41m'
+BG_G='\033[42m'
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 🏗️ INIT & AUTO-REPAIR
@@ -38,7 +38,6 @@ BG_G='\033[42m'   # Green Background
 mkdir -p "$DIR" "$BACKUP_DIR"
 touch "$USERS_DB"
 
-# Auto-Health Check: Ensure basic tools exist
 check_dependencies() {
     MISSING=""
     ! command -v python3 &>/dev/null && MISSING="python3 $MISSING"
@@ -169,7 +168,6 @@ BANNER
     echo -e "${N}"
 }
 
-# NEW: Big Success Banner for "ACHRAF SERVER"
 print_achraf_success() {
     echo -e "\n${Y}  ╔══════════════════════════════════════════════════════════════════╗${N}"
     echo -e "${Y}  ║${N}                                                                      ${Y}║${N}"
@@ -183,7 +181,7 @@ print_header() {
     clear_screen
     print_banner
     
-    check_dependencies # Run smart check every time
+    check_dependencies 
     
     local IP=$(curl -s -m2 ifconfig.me 2>/dev/null || echo "Offline")
     local RAM=$(free -m | awk '/Mem/{printf "%d/%dMB", $3, $2}')
@@ -192,7 +190,6 @@ print_header() {
     local DOMAIN=${DOMAIN:-"Not Set"}
     local USERS_COUNT=$(wc -l < "$USERS_DB" 2>/dev/null || echo 0)
     
-    # Expiry Check (Smart Feature)
     local EXP_WARN=""
     local today_sec=$(date +%s)
     while IFS='|' read -r u _ e _; do
@@ -205,7 +202,6 @@ print_header() {
         fi
     done < "$USERS_DB"
     
-    # Port Conflict Check
     local PORT_STS=""
     if netstat -tuln 2>/dev/null | grep -q ":80 "; then
         if ! systemctl is-active superproxy &>/dev/null; then
@@ -319,7 +315,7 @@ LIM
     cp "$0" /usr/bin/superproxy 2>/dev/null
     chmod +x /usr/bin/superproxy 2>/dev/null
     
-    print_achraf_success # BIG SUCCESS BANNER
+    print_achraf_success 
     echo -e "  ${W}Command:${N} ${C}superproxy${N}\n"
     sleep 2
 }
@@ -388,7 +384,7 @@ setup_cloudflare() {
             "{\"type\":\"A\",\"name\":\"$FULL_DOMAIN\",\"content\":\"$IP\",\"proxied\":true,\"ttl\":1}" >/dev/null
     else
         cf_api POST "/zones/$ZONE_ID/dns_records" \
-            "{\"type\":\"A\",\"name\":\"$FULL_DOMAIN\",\"content\":\"$IP\",\"proxied\":true,\"ttl\":1}" >/dev/null
+            "{\"type\":\"A\",\"name\":\"$FULL_DOMAIN\",\"content\":\"$IP\",\"proxied\":true,\"ttl\":1}\" >/dev/null
     fi
     print_success "DNS Updated: $FULL_DOMAIN"
     
